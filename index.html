@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Poll User Vote Finder</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 2rem;
+    max-width: 600px;
+  }
+  label {
+    display: block;
+    margin-top: 1rem;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 0.5rem;
+    font-size: 1rem;
+    margin-top: 0.25rem;
+    box-sizing: border-box;
+  }
+  button {
+    margin-top: 1rem;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+  }
+  #result {
+    margin-top: 1.5rem;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+
+<h1>Poll User Vote Finder</h1>
+
+<label for="pollID">Poll ID:</label>
+<input type="text" id="pollID" placeholder="Enter poll ID" />
+
+<label for="userInput">User ID or User Name (case-sensitive):</label>
+<input type="text" id="userInput" placeholder="Enter user ID or user name" />
+
+<button id="searchBtn">Search Vote</button>
+
+<div id="result"></div>
+
+<script>
+(() => {
+  const proxyBase = "https://psp.tommyek67.workers.dev/?url=";
+  const pollResultsCache = new Map();
+
+  const pollIDInput = document.getElementById("pollID");
+  const userInputInput = document.getElementById("userInput");
+  const searchBtn = document.getElementById("searchBtn");
+  const resultDiv = document.getElementById("result");
+
+  async function fetchPollResults(pollID) {
+    if (pollResultsCache.has(pollID)) {
+      return pollResultsCache.get(pollID);
+    }
+    const url = `${proxyBase}http://api.real.vg/polls/${encodeURIComponent(pollID)}/results`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to fetch poll results");
+    const data = await response.json();
+    pollResultsCache.set(pollID, data);
+    return data;
+  }
+
+  async function fetchUserVotes(pollID, playerID) {
+    const url = `${proxyBase}http://api.real.vg/polls/${encodeURIComponent(pollID)}/option/${encodeURIComponent(playerID)}/uservotes`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Failed to fetch user votes");
+    return response.json();
+  }
+
+  searchBtn.addEventListener("click", async () => {
+    resultDiv.textContent = "";
+    const pollID = pollIDInput.value.trim();
+    const userInput = userInputInput.value.trim();
+
+    if (!pollID || !userInput) {
+      resultDiv.textContent = "Please enter both Poll ID and User ID/User Name.";
+      return;
+    }
+
+    resultDiv.textContent = "Searching... please wait.";
+
+    try {
+      const pollData = await fetchPollResults(pollID);
+
+      if (!pollData.results || pollData.results.length === 0) {
+        resultDiv.textContent = `No players found in poll ${pollID}.`;
+        return;
+      }
+
+      let foundVote = null;
+
+      // Search each player’s user votes for the userInput match
+      for (const playerEntry of pollData.results) {
+        const playerID = playerEntry.id;
+        const playerName = playerEntry.player?.displayName || "Unknown Player";
+        const rank = playerEntry.rank || "N/A";
+
+        const votesData = await fetchUserVotes(pollID, playerID);
+
+        if (!votesData.users || votesData.users.length === 0) {
+          continue;
+        }
+
+        // Look for exact match by userId or userName (case-sensitive)
+        const matchedUser = votesData.users.find(u =>
+          u.userId === userInput || u.userName === userInput
+        );
+
+        if (matchedUser) {
+          foundVote = {
+            userName: matchedUser.userName,
+            playerName,
+            rank
+          };
+          break;
+        }
+      }
+
+      if (foundVote) {
+        resultDiv.textContent = `${foundVote.userName} voted for ${foundVote.playerName} (Rank: ${foundVote.rank})`;
+      } else {
+        resultDiv.textContent = `User vote not found in poll ${pollID}.`;
+      }
+    } catch (err) {
+      console.error(err);
+      resultDiv.textContent = "An error occurred while fetching data. Please check the Poll ID and try again.";
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
